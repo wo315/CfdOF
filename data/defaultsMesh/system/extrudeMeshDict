@@ -21,7 +21,7 @@ sourceCase "./";
 sourcePatches (%(TwoDSettings/FrontFaceList%));
 
 // If construct from patch: patch to use for back (can be same as sourcePatch)
-exposedPatchName %(TwoDSettings/BackFace%);
+exposedPatchName %(TwoDSettings/BackFaceName%);
 
 
 // Flip surface normals before usage. Valid only for extrude from surface or
@@ -29,23 +29,24 @@ exposedPatchName %(TwoDSettings/BackFace%);
 flipNormals true;
 
 //- Linear extrusion in point-normal direction
-extrudeModel        linearNormal;
+extrudeModel        linearDirection;
 
 nLayers             1;
 
 expansionRatio      1.0;
 
-linearNormalCoeffs
+linearDirectionCoeffs
 {
+    direction       (%(TwoDSettings/Direction%));
     thickness       %(TwoDSettings/Distance%);
 }
 
 // Do front and back need to be merged? Usually only makes sense for 360
 // degree wedges.
-mergeFaces false;   //true;
+mergeFaces false;
 
 // Merge small edges. Fraction of bounding box.
-mergeTol 0;
+mergeTol 1e-6;
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

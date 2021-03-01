@@ -73,7 +73,7 @@ class _CommandCfdMeshFromShape:
                                 "CfdTools.getActiveAnalysis().addObject(App.ActiveDocument.ActiveObject)")
                         FreeCADGui.ActiveDocument.setEdit(FreeCAD.ActiveDocument.ActiveObject.Name)
         else:
-            print("ERROR: You cannot have more than one mesh object")
+            print("ERROR: You cannot have more than one mesh object per analysis")
         FreeCADGui.Selection.clearSelection()
 
 
@@ -124,6 +124,10 @@ class _CfdMesh:
         if addObjectProperty(obj, 'ElementDimension', _CfdMesh.known_element_dimensions, "App::PropertyEnumeration",
                              "Mesh Parameters", "Dimension of mesh elements (Default 3D)"):
             obj.ElementDimension = '3D'
+
+        addObjectProperty(obj, 'ExtrusionDistance2D', "1 m", "App::PropertyLength",
+                          "Mesh Parameters", "Thickness of mesh extrusion for 2D meshes")
+
 
     def onDocumentRestored(self, obj):
         self.initProperties(obj)

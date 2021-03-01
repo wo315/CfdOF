@@ -51,12 +51,12 @@ class CfdMeshTools:
         self.scale = 0.001  # Scale mm to m
 
         # Default to 2 % of bounding box characteristic length
-        self.clmax = Units.Quantity(self.mesh_obj.CharacteristicLengthMax).Value
+        self.clmax = Units.Quantity(self.mesh_obj.CharacteristicLengthMax).Value  # Always in internal format, i.e. mm
         if self.clmax <= 0.0:
             shape = self.part_obj.Shape
             cl_bound_mag = math.sqrt(shape.BoundBox.XLength**2 + shape.BoundBox.YLength**2 + shape.BoundBox.ZLength**2)
             cl_bound_min = min(min(shape.BoundBox.XLength, shape.BoundBox.YLength), shape.BoundBox.ZLength)
-            self.clmax = min(0.02*cl_bound_mag, 0.4*cl_bound_min)  # Always in internal format, i.e. mm
+            self.clmax = min(0.02*cl_bound_mag, 0.4*cl_bound_min)
 
         # Only used by gmsh - what purpose?
         self.clmin = 0.0
@@ -80,7 +80,7 @@ class CfdMeshTools:
 
     def processDimension(self):
         """ Additional checking/processing for 2D vs 3D """
-        # 3D cfMesh and snappyHexMesh, and 2D by conversion, while in future cfMesh may support 2D directly
+        # Supports 3D cfMesh and snappyHexMesh, and 2D by conversion, while in future cfMesh may support 2D directly
         if self.dimension != '3D' and self.dimension != '2D':
             FreeCAD.Console.PrintError('Invalid element dimension. Setting to 3D.')
             self.dimension = '3D'
@@ -100,46 +100,34 @@ class CfdMeshTools:
 
         if self.dimension == '2D':
             self.two_d_settings['ConvertTo2D'] = True
-            if len(twoDPlanes) != 2:
-                raise RuntimeError("For 2D meshing, two separate, parallel, 2D bounding planes must be present as "
-                                   "boundary conditions in the CFD analysis object.")
+            if len(twoDPlanes) != 1:
+                raise RuntimeError("For 2D meshing, a single 2D extrusion patch must be specified as "
+                                   "a boundary condition in the CFD analysis object.")
             doc_name = str(analysis_obj.Document.Name)
             fFObjName = twoDPlanes[0]
-            bFObjName = twoDPlanes[1]
             frontObj = FreeCAD.getDocument(doc_name).getObject(fFObjName)
-            backObj = FreeCAD.getDocument(doc_name).getObject(bFObjName)
             fShape = frontObj.Shape
-            bShape = backObj.Shape
-            if len(fShape.Faces) == 0 or len(bShape.Faces) == 0:
-                raise RuntimeError("A 2D bounding plane is empty.")
+            if len(fShape.Faces) == 0:
+                raise RuntimeError("The 2D extrusion patch is empty.")
             else:
                 allFFacesPlanar = True
-                allBFacesPlanar = True
+                norm = FreeCAD.Vector(0, 0, 0)
                 for faces in fShape.Faces:
                     if not isinstance(faces.Surface, Part.Plane):
                         allFFacesPlanar = False
                         break
-                for faces in bShape.Faces:
-                    if not isinstance(faces.Surface, Part.Plane):
-                        allBFacesPlanar = False
-                        break
-                if allFFacesPlanar and allBFacesPlanar:
-                    A1 = fShape.Faces[0].Surface.Axis
-                    A1.multiply(1.0/A1.Length)
-                    A2 = bShape.Faces[0].Surface.Axis
-                    A2.multiply(1.0/A2.Length)
-                    if (A1-A2).Length <= 1e-6 or (A1+A2).Length <= 1e-6:
-                        if len(frontObj.Shape.Vertexes) == len(backObj.Shape.Vertexes) and \
-                           len(frontObj.Shape.Vertexes) > 0 and \
-                           abs(frontObj.Shape.Area) > 0 and \
-                           abs(frontObj.Shape.Area - backObj.Shape.Area)/abs(frontObj.Shape.Area) < 1e-6:
-                            self.two_d_settings['Distance'] = fShape.distToShape(bShape)[0]/1000
-                        else:
-                            raise RuntimeError("2D bounding planes do not match up.")
                     else:
-                        raise RuntimeError("2D bounding planes are not aligned.")
+                        n1 = fShape.Faces[0].Surface.Axis
+                        n1.multiply(1.0 / n1.Length)
+                        if norm.Length > 1e-6 and (n1-norm).Length > 1e-6 and (norm-n1).Length > 1e-6:
+                            allFFacesPlanar = False
+                            break
+                        norm = n1
+                if allFFacesPlanar:
+                    self.two_d_settings['Distance'] = Units.Quantity(self.mesh_obj.ExtrusionDistance2D).getValueAs("m")
+                    self.two_d_settings['Direction'] = norm.x, norm.y, norm.z
                 else:
-                    raise RuntimeError("2D bounding planes need to be flat surfaces.")
+                    raise RuntimeError("2D extrusion patch must to be planar.")
 
             fbi = CfdTools.getCfdBoundaryGroup(analysis_obj).index(frontObj)
             ffl = []
@@ -149,22 +137,14 @@ class CfdMeshTools:
 
             self.two_d_settings['FrontFaceList'] = tuple(ffl)
 
-            bbi = CfdTools.getCfdBoundaryGroup(analysis_obj).index(backObj)
-            bfl = []
-            for l, f in enumerate(self.patch_faces[bbi+1]):
-                if len(f):
-                    bfl.append(self.patch_names[bbi+1][l])
+            if not self.two_d_settings['FrontFaceList']:
+                raise RuntimeError("2D extrusion patch could not be found in the shape being meshed.")
 
-            self.two_d_settings['BackFaceList'] = tuple(bfl)
-
-            if not self.two_d_settings['BackFaceList'] or not self.two_d_settings['FrontFaceList']:
-                raise RuntimeError("2D front and/or back plane(s) could not be found in the shape being meshed.")
-
-            self.two_d_settings['BackFace'] = bfl[0]
+            self.two_d_settings['BackFaceName'] = ffl[0]
         else:
             self.two_d_settings['ConvertTo2D'] = False
             if len(twoDPlanes):
-                raise RuntimeError("2D bounding planes can not be used in 3D mesh")
+                raise RuntimeError("2D extrusion patch can not be used in 3D mesh")
 
     def getClmax(self):
         return Units.Quantity(self.clmax, Units.Length)
